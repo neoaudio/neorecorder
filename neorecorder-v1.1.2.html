@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark">
+<title>neorecorder</title>
+<meta name="apple-mobile-web-app-title" content="neorecorder">
+<meta name="application-name" content="neorecorder">
+<style>
+:root{
+  --ios-yellow:#ffd60a;
+  --ios-red:#ff3b30;
+  --chrome:#000;
+  --glass:rgba(255,255,255,.18);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:#000;overflow:hidden;overscroll-behavior:none}
+body{
+  font:500 14px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:#fff;
+  user-select:none;-webkit-user-select:none;
+  -webkit-touch-callout:none;
+}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--ios-yellow);outline-offset:3px;border-radius:6px}
+
+#app{
+  position:relative;height:100%;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ---------- top chrome ---------- */
+#topBar{flex:0 0 auto;height:46px;display:flex;align-items:center;justify-content:center}
+#recPill{
+  display:none;align-items:center;gap:7px;
+  background:rgba(0,0,0,.55);border-radius:16px;padding:5px 12px;
+  font-size:15px;font-variant-numeric:tabular-nums;letter-spacing:.02em;
+}
+#recDot{width:9px;height:9px;border-radius:50%;background:var(--ios-red)}
+body[data-rec="1"] #recPill{display:flex}
+body[data-rec="1"] #recDot{animation:blink 1s steps(1,end) infinite}
+@keyframes blink{50%{opacity:.15}}
+
+/* ---------- stage ---------- */
+#stage{
+  flex:1 1 auto;position:relative;overflow:hidden;background:#000;
+  display:flex;align-items:center;justify-content:center;touch-action:none;
+}
+#audioView{display:flex;flex-direction:column;align-items:center;gap:26px;color:#8e8e93}
+#audioView svg{width:54px;height:54px;fill:#8e8e93}
+#bars{display:flex;align-items:flex-end;gap:6px;height:64px}
+#bars i{width:6px;height:6px;border-radius:3px;background:var(--ios-red);transition:height .08s linear}
+body[data-busy="1"] #bars i{background:#8e8e93}
+#audioView p{margin:0;font-size:13px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+
+#toast{
+  position:absolute;left:50%;bottom:18px;transform:translate(-50%,8px);
+  background:rgba(0,0,0,.6);border-radius:16px;padding:7px 14px;
+  font-size:13px;white-space:nowrap;max-width:88%;overflow:hidden;text-overflow:ellipsis;
+  opacity:0;transition:opacity .2s ease,transform .2s ease;pointer-events:none;
+}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- bottom chrome ---------- */
+#bottomBar{flex:0 0 auto;background:var(--chrome);padding-bottom:6px}
+#modes{display:flex;align-items:center;justify-content:center;gap:30px;height:38px}
+.mode{
+  font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:rgba(255,255,255,.82);padding:8px 2px;transition:color .15s ease;
+}
+.mode.active{color:var(--ios-yellow)}
+.mode[disabled]{cursor:default}
+body[data-rec="1"] #modes{visibility:hidden}
+body[data-busy="1"] .mode:not(.active){color:rgba(255,255,255,.28)}
+#controls{height:112px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 24px}
+
+#lastBtn{
+  width:52px;height:52px;border-radius:7px;justify-self:start;
+  background:#1c1c1e;display:grid;place-items:center;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);
+}
+#lastBtn[disabled]{opacity:.45}
+#lastBtn svg{width:24px;height:24px;fill:#aeaeb2}
+
+#shutter{
+  width:74px;height:74px;border-radius:50%;justify-self:center;
+  box-shadow:inset 0 0 0 3px #fff;display:grid;place-items:center;transition:transform .1s ease;
+}
+#shutter:active{transform:scale(.94)}
+#shutter[disabled]{opacity:.4}
+#core{width:60px;height:60px;border-radius:50%;background:var(--ios-red);transition:width .18s ease,height .18s ease,border-radius .18s ease}
+body[data-rec="1"] #core{width:30px;height:30px;border-radius:8px}
+
+#uploadBtn{width:46px;height:46px;border-radius:50%;justify-self:end;background:var(--glass);display:grid;place-items:center}
+#uploadBtn svg{width:24px;height:24px;fill:#fff}
+#uploadBtn[disabled]{opacity:.35;cursor:default}
+body:not([data-mode="midi"]) #uploadBtn{visibility:hidden}
+#fileInput{display:none}
+
+/* ---------- permission gate ---------- */
+#gate{
+  position:absolute;inset:0;z-index:10;background:#000;
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;padding:34px;text-align:center;
+}
+#gate.show{display:flex}
+#gate h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.01em}
+#gate p{margin:0;max-width:42ch;font-size:14px;font-weight:400;line-height:1.45;color:#aeaeb2}
+#gate #gateDetail{font-size:11px;color:#636366;font-family:ui-monospace,Menlo,Consolas,monospace;max-width:52ch;word-break:break-word}
+#gateDetail:empty{display:none}
+#gateBtn{
+  margin-top:6px;background:var(--ios-yellow);color:#000;font-weight:600;font-size:16px;
+  padding:12px 26px;border-radius:24px;
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+@media (min-width:900px) and (orientation:landscape){
+  #stage{margin:0 auto;width:min(100%,calc((100vh - 220px) * 1.6))}
+}
+</style>
+</head>
+<body data-mode="voice" data-rec="0" data-busy="0">
+<div id="app">
+
+  <div id="topBar">
+    <div id="recPill"><span id="recDot"></span><span id="timer">00:00</span></div>
+  </div>
+
+  <div id="stage">
+    <div id="audioView">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-4.08A7 7 0 0 0 19 11z"/></svg>
+      <div id="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <p id="caption" aria-live="polite">Voice recording</p>
+    </div>
+    <div id="toast" role="status"></div>
+  </div>
+
+  <div id="bottomBar">
+    <div id="modes">
+      <button class="mode active" id="modeVoice" data-mode="voice" type="button" aria-pressed="true">Voice</button>
+      <button class="mode" id="modeMidi" data-mode="midi" type="button" aria-pressed="false">MIDI</button>
+    </div>
+    <div id="controls">
+      <button id="lastBtn" type="button" title="Save the last file again" aria-label="Save the last file again" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+      </button>
+      <button id="shutter" type="button" aria-label="Start the recording" disabled><span id="core"></span></button>
+      <button id="uploadBtn" type="button" title="Convert an audio file to MIDI" aria-label="Convert an audio file to MIDI">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 16V7.83l-3.59 3.58L6 10l6-6 6 6-1.41 1.41L13 7.83V16h-2zm-6 2h14v2H5v-2z"/></svg>
+      </button>
+      <input id="fileInput" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.aif,.aiff,.caf,.flac,.ogg,.oga,.opus,.webm">
+    </div>
+  </div>
+
+  <div id="gate">
+    <h1 id="gateTitle">neorecorder</h1>
+    <p id="gateText">This app needs the microphone.</p>
+    <p id="gateDetail"></p>
+    <button id="gateBtn" type="button">Allow the microphone</button>
+  </div>
+
+</div>
+
+<script>
+var A2M = (function(){
+'use strict';
+
+/* ---------- settings ---------- */
+var MIN_HZ   = 50;      /* lowest pitch, about G1 */
+var MAX_HZ   = 2000;    /* highest pitch, about B6 */
+var FRAME    = 2048;    /* pitch window, in samples at the work rate */
+var HOP      = 256;     /* pitch step, in samples at the work rate */
+var FFTN     = 4096;    /* two times FRAME, so the autocorrelation does not wrap */
+var CLARITY  = 0.75;    /* minimum periodicity for a voiced frame */
+var MIN_NOTE = 0.07;    /* shortest note, in seconds */
+var PPQ      = 480;     /* MIDI ticks for each quarter note */
+
+function num(a, b){ return a - b; }
+function now(){ return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+function pause(){ return new Promise(function(r){ setTimeout(r, 0); }); }
+
+/* ---------- FFT with tables ---------- */
+var fSize = 0, fCos = null, fSin = null, fRev = null;
+function fftSetup(n){
+  if (fSize === n) return;
+  fSize = n;
+  fCos = new Float64Array(n >> 1);
+  fSin = new Float64Array(n >> 1);
+  for (var k = 0; k < (n >> 1); k++){
+    fCos[k] = Math.cos(2 * Math.PI * k / n);
+    fSin[k] = Math.sin(2 * Math.PI * k / n);
+  }
+  fRev = new Uint32Array(n);
+  var bits = Math.round(Math.log(n) / Math.LN2);
+  for (var i = 0; i < n; i++){
+    var r = 0;
+    for (var b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b);
+    fRev[i] = r;
+  }
+}
+function fft(re, im){
+  var n = re.length, i, j, t;
+  fftSetup(n);
+  for (i = 0; i < n; i++){
+    j = fRev[i];
+    if (i < j){ t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (var size = 2; size <= n; size <<= 1){
+    var half = size >> 1, step = n / size;
+    for (var s = 0; s < n; s += size){
+      for (var k = 0; k < half; k++){
+        var a = s + k, b = a + half, c = fCos[k * step], d = -fSin[k * step];
+        var xr = re[b] * c - im[b] * d, xi = re[b] * d + im[b] * c;
+        re[b] = re[a] - xr; im[b] = im[a] - xi;
+        re[a] += xr; im[a] += xi;
+      }
+    }
+  }
+}
+
+/* ---------- signal preparation ---------- */
+
+/* Decimate to about 22 kHz with a triangle filter, then remove DC. */
+function prepare(raw, rawSr){
+  var D = Math.max(1, Math.round(rawSr / 22050));
+  var m = Math.floor(raw.length / D);
+  var out = new Float32Array(m);
+  var norm = D * D, i, k;
+  for (i = 0; i < m; i++){
+    var c = i * D, acc = 0;
+    for (k = -(D - 1); k <= D - 1; k++){
+      var j = c + k;
+      if (j < 0 || j >= raw.length) continue;
+      acc += raw[j] * (D - Math.abs(k));
+    }
+    out[i] = acc / norm;
+  }
+  var px = 0, py = 0;
+  for (i = 0; i < m; i++){
+    var xv = out[i], yv = xv - px + 0.995 * py;
+    px = xv; py = yv; out[i] = yv;
+  }
+  return { x: out, sr: rawSr / D };
+}
+
+function squares(x){
+  var c = new Float64Array(x.length + 1);
+  for (var i = 0; i < x.length; i++) c[i + 1] = c[i] + x[i] * x[i];
+  return c;
+}
+function meanDb(cum, a, b){
+  var n = cum.length - 1;
+  if (a < 0) a = 0;
+  if (b > n) b = n;
+  if (b <= a) return -120;
+  var v = (cum[b] - cum[a]) / (b - a);
+  return v > 1e-12 ? 10 * Math.log10(v) : -120;
+}
+function percentile(arr, q){
+  var a = arr.slice().sort();
+  return a[Math.min(a.length - 1, Math.max(0, Math.floor(q * (a.length - 1))))];
+}
+
+/* Level in dB every 5 ms, with a 10 ms window. */
+function envelope(cum, sr){
+  var step = Math.max(1, Math.round(sr * 0.005));
+  var n = Math.max(1, Math.ceil((cum.length - 1) / step));
+  var db = new Float32Array(n);
+  for (var i = 0; i < n; i++){ var c = i * step; db[i] = meanDb(cum, c - step, c + step); }
+  return { db: db, dt: step / sr };
+}
+
+/* Sharp level rises. */
+function findOnsets(env, gate){
+  var db = env.db, n = db.length, out = [], LAG = 3, RAD = 6;
+  for (var i = LAG; i < n; i++){
+    var o = db[i] - db[i - LAG];
+    if (o < 6) continue;
+    var peak = true;
+    for (var k = Math.max(LAG, i - RAD); k <= Math.min(n - 1, i + RAD); k++){
+      if (k !== i && db[k] - db[k - LAG] > o){ peak = false; break; }
+    }
+    if (!peak) continue;
+    if (db[Math.min(n - 1, i + 2)] < gate) continue;
+    var t = Math.max(0, (i - 1.5) * env.dt);
+    var last = out[out.length - 1];
+    if (last && t - last.t < 0.05){
+      if (o > last.o){ last.t = t; last.o = o; }
+      continue;
+    }
+    out.push({ t: t, o: o });
+  }
+  return out;
+}
+
+/* ---------- pitch tracking (McLeod pitch method) ---------- */
+
+async function trackPitch(x, sr, cum, gate, progress){
+  var n = Math.ceil(x.length / HOP);
+  var f0 = new Float32Array(n), clar = new Float32Array(n);
+  var tauMin = Math.max(2, Math.floor(sr / MAX_HZ));
+  var tauMax = Math.min(FRAME / 2, Math.ceil(sr / MIN_HZ));
+  var fr = new Float64Array(FRAME);
+  var re = new Float64Array(FFTN), im = new Float64Array(FFTN);
+  var nsdf = new Float64Array(tauMax + 2);
+  var half = FRAME >> 1, t0 = now(), i, j;
+
+  for (i = 0; i < n; i++){
+    if (now() - t0 > 40){ progress(0.05 + 0.85 * i / n); await pause(); t0 = now(); }
+    var c = i * HOP;
+    if (meanDb(cum, c - half, c + half) < gate) continue;
+
+    var base = c - half;
+    for (j = 0; j < FRAME; j++){
+      var s = base + j;
+      fr[j] = (s >= 0 && s < x.length) ? x[s] : 0;
+      re[j] = fr[j]; im[j] = 0;
+    }
+    for (j = FRAME; j < FFTN; j++){ re[j] = 0; im[j] = 0; }
+    fft(re, im);
+    for (j = 0; j < FFTN; j++){ re[j] = re[j] * re[j] + im[j] * im[j]; im[j] = 0; }
+    fft(re, im);
+
+    var m = 0;
+    for (j = 0; j < FRAME; j++) m += fr[j] * fr[j];
+    m *= 2;
+    var lim = tauMax + 1;
+    for (var tau = 0; tau <= lim; tau++){
+      if (tau > 0) m -= fr[FRAME - tau] * fr[FRAME - tau] + fr[tau - 1] * fr[tau - 1];
+      nsdf[tau] = m > 1e-12 ? 2 * (re[tau] / FFTN) / m : 0;
+    }
+
+    /* key maxima between zero crossings */
+    var t = 1, best = -1, peaks = [];
+    while (t < lim && nsdf[t] > 0) t++;
+    while (t < lim){
+      while (t < lim && nsdf[t] <= 0) t++;
+      var pk = -1, pt = -1;
+      while (t < lim && nsdf[t] > 0){
+        if (nsdf[t] > pk){ pk = nsdf[t]; pt = t; }
+        t++;
+      }
+      if (pt >= tauMin && pt < lim - 1 && t < lim){
+        peaks.push(pt);
+        if (pk > best) best = pk;
+      }
+    }
+    if (best <= 0) continue;
+    var thr = 0.9 * best, chosen = -1;
+    for (j = 0; j < peaks.length; j++){ if (nsdf[peaks[j]] >= thr){ chosen = peaks[j]; break; } }
+    if (chosen < 0) continue;
+
+    var a = nsdf[chosen - 1], b = nsdf[chosen], d = nsdf[chosen + 1];
+    var den = a - 2 * b + d, delta = den !== 0 ? 0.5 * (a - d) / den : 0;
+    if (delta > 1 || delta < -1) delta = 0;
+    f0[i] = sr / (chosen + delta);
+    clar[i] = b - 0.25 * (a - d) * delta;
+  }
+  return { f0: f0, clar: clar, dt: HOP / sr };
+}
+
+/* ---------- notes ---------- */
+
+function segment(tr, env, onsets, gate){
+  var n = tr.f0.length, dt = tr.dt, i, k;
+  var voiced = new Uint8Array(n), p = new Float32Array(n);
+
+  for (i = 0; i < n; i++){
+    if (tr.f0[i] > 0 && tr.clar[i] >= CLARITY){
+      voiced[i] = 1;
+      p[i] = 69 + 12 * Math.log2(tr.f0[i] / 440);
+    }
+  }
+
+  /* fill holes of 1 or 2 frames */
+  for (i = 1; i < n; i++){
+    if (voiced[i] || !voiced[i - 1]) continue;
+    var j = i;
+    while (j < n && !voiced[j] && j - i < 3) j++;
+    if (j < n && voiced[j] && j - i <= 2 && Math.abs(p[j] - p[i - 1]) < 1){
+      for (k = i; k < j; k++){
+        voiced[k] = 1;
+        p[k] = p[i - 1] + (p[j] - p[i - 1]) * (k - i + 1) / (j - i + 1);
+      }
+    }
+  }
+
+  /* median of 5 */
+  var q = new Float32Array(n), w = [];
+  for (i = 0; i < n; i++){
+    if (!voiced[i]) continue;
+    w.length = 0;
+    for (k = i - 2; k <= i + 2; k++) if (k >= 0 && k < n && voiced[k]) w.push(p[k]);
+    w.sort(num);
+    q[i] = w[w.length >> 1];
+  }
+
+  /* global tuning offset */
+  var cs = 0, sn = 0, cnt = 0;
+  for (i = 0; i < n; i++){
+    if (!voiced[i]) continue;
+    var ang = 2 * Math.PI * (q[i] - Math.round(q[i]));
+    cs += Math.cos(ang); sn += Math.sin(ang); cnt++;
+  }
+  var tune = 0;
+  if (cnt > 0 && Math.sqrt(cs * cs + sn * sn) / cnt > 0.25) tune = Math.atan2(sn, cs) / (2 * Math.PI);
+  for (i = 0; i < n; i++) if (voiced[i]) q[i] -= tune;
+
+  /* split on voicing and on stable pitch changes */
+  var ranges = [], cur = null, hist = [];
+  function ref(){ var a = hist.slice(-40).sort(num); return a[a.length >> 1]; }
+  for (i = 0; i < n; i++){
+    if (!voiced[i]){
+      if (cur){ cur.end = i; ranges.push(cur); cur = null; }
+      continue;
+    }
+    if (!cur){ cur = { start: i, end: i }; hist = [q[i]]; continue; }
+    var r0 = ref();
+    if (Math.abs(q[i] - r0) > 0.75){
+      var ok = i + 2 < n;
+      for (k = i; ok && k <= i + 2; k++){
+        if (!voiced[k] || Math.abs(q[k] - r0) <= 0.75 || Math.abs(q[k] - q[i]) > 0.75) ok = false;
+      }
+      if (ok){
+        cur.end = i; ranges.push(cur);
+        cur = { start: i, end: i }; hist = [q[i]];
+      }
+      continue;
+    }
+    hist.push(q[i]);
+  }
+  if (cur){ cur.end = n; ranges.push(cur); }
+
+  /* split repeated notes at level onsets */
+  var ed = env.db, en = ed.length, pieces = [];
+  function envIdx(t){ return Math.max(0, Math.min(en - 1, Math.round(t / env.dt))); }
+  ranges.forEach(function(r){
+    var ts = r.start * dt, te = r.end * dt, s = r.start, sT = null;
+    for (var o = 0; o < onsets.length; o++){
+      var ot = onsets[o].t;
+      if (ot <= ts + 0.08 || ot >= te - 0.06) continue;
+      var di = envIdx(ot), a0 = envIdx(ts), preMax = -120, dipMin = 120, z;
+      for (z = a0; z <= di - 6; z++) if (ed[z] > preMax) preMax = ed[z];
+      for (z = Math.max(0, di - 12); z <= di; z++) if (ed[z] < dipMin) dipMin = ed[z];
+      if (preMax - dipMin < 6) continue;
+      var fi = Math.round(ot / dt);
+      if (fi - s < 3 || r.end - fi < 3) continue;
+      pieces.push({ start: s, end: fi, t0: sT });
+      s = fi; sT = ot;
+    }
+    pieces.push({ start: s, end: r.end, t0: sT });
+  });
+
+  /* build notes */
+  var notes = [];
+  pieces.forEach(function(r){
+    var arr = [];
+    for (var z = r.start; z < r.end; z++) if (voiced[z]) arr.push(q[z]);
+    if (!arr.length) return;
+    arr.sort(num);
+    var med = arr[arr.length >> 1];
+    var t0 = r.start * dt, t1 = r.end * dt, byOnset = r.t0 !== null;
+    if (byOnset){
+      t0 = r.t0;
+    } else {
+      var bestD = 0.06;
+      for (var o = 0; o < onsets.length; o++){
+        var dd = Math.abs(onsets[o].t - t0);
+        if (dd < bestD){ bestD = dd; t0 = onsets[o].t; }
+      }
+    }
+    var si = envIdx(t0), ei = envIdx(t1), pk = -120;
+    for (z = si; z <= ei; z++) if (ed[z] > pk) pk = ed[z];
+    var fl = Math.max(gate, pk - 25);
+    while (ei > si + 1 && ed[ei] < fl) ei--;
+    t1 = Math.min(t1, (ei + 1) * env.dt);
+    notes.push({
+      pitch: Math.max(0, Math.min(127, Math.round(med))),
+      t0: t0, t1: t1, peak: pk, onset: byOnset
+    });
+  });
+
+  notes.sort(function(a, b){ return a.t0 - b.t0; });
+  for (i = 0; i + 1 < notes.length; i++){
+    if (notes[i].t1 > notes[i + 1].t0) notes[i].t1 = notes[i + 1].t0;
+  }
+  var merged = [];
+  notes.forEach(function(nt){
+    var last = merged[merged.length - 1];
+    if (last && last.pitch === nt.pitch && !nt.onset && nt.t0 - last.t1 < 0.04){
+      last.t1 = nt.t1;
+      if (nt.peak > last.peak) last.peak = nt.peak;
+      return;
+    }
+    merged.push(nt);
+  });
+  var out = merged.filter(function(nt){ return nt.t1 - nt.t0 >= MIN_NOTE; });
+
+  var maxPk = gate + 1;
+  out.forEach(function(nt){ if (nt.peak > maxPk) maxPk = nt.peak; });
+  out.forEach(function(nt){
+    var v = 45 + 80 * (nt.peak - gate) / (maxPk - gate);
+    nt.velocity = Math.max(1, Math.min(127, Math.round(v)));
+    nt.w = 0.5 + nt.velocity / 254;
+  });
+  return { notes: out, tune: tune };
+}
+
+/* ---------- tempo ---------- */
+
+function coherence(notes, P){
+  var c = 0, s = 0, w = 0;
+  for (var i = 0; i < notes.length; i++){
+    var a = 2 * Math.PI * notes[i].t0 / P;
+    c += notes[i].w * Math.cos(a); s += notes[i].w * Math.sin(a); w += notes[i].w;
+  }
+  var ph = Math.atan2(s, c) / (2 * Math.PI) * P;
+  if (ph < 0) ph += P;
+  return { r: w > 0 ? Math.sqrt(c * c + s * s) / w : 0, phase: ph };
+}
+
+function estimateTempo(notes, duration){
+  var first = notes.length ? notes[0].t0 : 0;
+  var lastT = notes.length ? notes[notes.length - 1].t0 : 0;
+  if (notes.length < 4 || lastT - first < 1.5){
+    return { bpm: 120, start: first, fallback: true };
+  }
+  var RATE = 100, L = Math.ceil(duration * RATE) + 4, env = new Float64Array(L), i, l;
+  notes.forEach(function(nt){
+    var idx = Math.round(nt.t0 * RATE);
+    if (idx >= 0 && idx < L) env[idx] += nt.w;
+    if (idx - 1 >= 0 && idx - 1 < L) env[idx - 1] += nt.w * 0.5;
+    if (idx + 1 < L) env[idx + 1] += nt.w * 0.5;
+  });
+  var lagMin = Math.round(RATE * 60 / 240);
+  var lagMax = Math.min(Math.round(RATE * 60 / 40), Math.floor(L / 2));
+  if (lagMax <= lagMin) return { bpm: 120, start: first, fallback: true };
+  var acfLen = Math.min(L, lagMax * 4 + 1), acf = new Float64Array(acfLen);
+  for (l = 0; l < acfLen; l++){
+    var sum = 0;
+    for (i = 0; i + l < L; i++) sum += env[i] * env[i + l];
+    acf[l] = sum;
+  }
+  var WT = [1, 0.5, 0.33, 0.25], bestL = lagMin, bestS = -1;
+  for (l = lagMin; l <= lagMax; l++){
+    var sc = 0;
+    for (var m = 1; m <= 4; m++) if (m * l < acfLen) sc += WT[m - 1] * acf[m * l];
+    var b = 60 * RATE / l, lg = Math.log2(b / 120) / 0.9;
+    sc *= Math.exp(-0.5 * lg * lg);
+    if (sc > bestS){ bestS = sc; bestL = l; }
+  }
+  var b0 = 60 * RATE / bestL, bestB = b0, bestR = -1;
+  for (var bb = b0 * 0.94; bb <= b0 * 1.06; bb += 0.02){
+    var pp = 60 / bb;
+    var sc2 = coherence(notes, pp).r + 0.5 * coherence(notes, pp / 2).r + 0.25 * coherence(notes, pp / 4).r;
+    if (sc2 > bestR){ bestR = sc2; bestB = bb; }
+  }
+  var bpm = bestB, bInt = Math.round(bpm);
+  if (duration * Math.abs(bInt - bpm) / 60 < 0.125) bpm = bInt;
+  else bpm = Math.round(bpm * 100) / 100;
+  bpm = Math.max(20, Math.min(300, bpm));
+  var P = 60 / bpm;
+  /* The half-beat phase is stable with off-beat notes. Then pick the half with more weight on the beat. */
+  var ph2 = coherence(notes, P / 2).phase, ph = ph2, alt = ph2 + P / 2, sa = 0, sb = 0;
+  notes.forEach(function(nt){
+    sa += nt.w * Math.cos(2 * Math.PI * (nt.t0 - ph) / P);
+    sb += nt.w * Math.cos(2 * Math.PI * (nt.t0 - alt) / P);
+  });
+  if (sb > sa) ph = alt;
+  var k = Math.floor((first - ph) / P + 0.15);
+  return { bpm: bpm, start: ph + k * P, fallback: false };
+}
+
+/* ---------- main ---------- */
+
+async function analyze(raw, rawSr, progress){
+  progress = progress || function(){};
+  progress(0);
+  var pr = prepare(raw, rawSr), x = pr.x, sr = pr.sr;
+  var cum = squares(x);
+  var env = envelope(cum, sr);
+  var floorDb = percentile(env.db, 0.1), peakDb = percentile(env.db, 0.99);
+  var gate = Math.min(Math.max(floorDb + 10, -62), peakDb - 12);
+  await pause();
+  var tr = await trackPitch(x, sr, cum, gate, progress);
+  progress(0.92);
+  var onsets = findOnsets(env, gate);
+  var seg = segment(tr, env, onsets, gate);
+  var duration = x.length / sr;
+  var tempo = estimateTempo(seg.notes, duration);
+  progress(1);
+  return {
+    notes: seg.notes, tune: seg.tune, bpm: tempo.bpm,
+    start: tempo.start, fallback: tempo.fallback, duration: duration
+  };
+}
+
+/* ---------- Standard MIDI File, format 0 ---------- */
+
+function vlq(out, v){
+  var stack = [v & 0x7f];
+  while ((v >>= 7) > 0) stack.push((v & 0x7f) | 0x80);
+  while (stack.length) out.push(stack.pop());
+}
+
+function writeMidi(res){
+  var us = Math.round(60000000 / res.bpm);
+  var secPerTick = us / 1e6 / PPQ;
+  var ev = [];
+  res.notes.forEach(function(nt){
+    var on = Math.max(0, Math.round((nt.t0 - res.start) / secPerTick));
+    var off = Math.max(on + 1, Math.round((nt.t1 - res.start) / secPerTick));
+    ev.push({ t: on, o: 1, d: [0x90, nt.pitch, nt.velocity] });
+    ev.push({ t: off, o: 0, d: [0x80, nt.pitch, 0] });
+  });
+  ev.sort(function(a, b){ return a.t - b.t || a.o - b.o; });
+
+  var trk = [], name = 'neorecorder', i;
+  trk.push(0, 0xff, 0x03, name.length);
+  for (i = 0; i < name.length; i++) trk.push(name.charCodeAt(i));
+  trk.push(0, 0xff, 0x51, 0x03, (us >> 16) & 0xff, (us >> 8) & 0xff, us & 0xff);
+  trk.push(0, 0xff, 0x58, 0x04, 4, 2, 24, 8);
+  trk.push(0, 0xc0, 0);
+  var last = 0;
+  ev.forEach(function(e){
+    vlq(trk, e.t - last); last = e.t;
+    trk.push(e.d[0], e.d[1], e.d[2]);
+  });
+  trk.push(0, 0xff, 0x2f, 0x00);
+
+  var out = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (PPQ >> 8) & 0xff, PPQ & 0xff,
+             0x4d, 0x54, 0x72, 0x6b,
+             (trk.length >>> 24) & 0xff, (trk.length >> 16) & 0xff, (trk.length >> 8) & 0xff, trk.length & 0xff];
+  return new Uint8Array(out.concat(trk));
+}
+
+return { analyze: analyze, writeMidi: writeMidi, PPQ: PPQ };
+})();
+
+
+(function(){
+'use strict';
+
+var VERSION = '1.1.2';
+var MAX_UPLOAD = 600;   /* seconds of an uploaded file that the app analyzes */
+var MAX_SECONDS = { voice: 1200, midi: 300 };   /* 20 minutes of voice, 5 minutes for MIDI */
+var CAPTION = { voice: 'Voice recording', midi: 'Audio to MIDI' };
+var MODES = ['voice', 'midi'];
+
+var el = {
+  body: document.body,
+  toast: document.getElementById('toast'),
+  timer: document.getElementById('timer'),
+  caption: document.getElementById('caption'),
+  stage: document.getElementById('stage'),
+  modeBtns: Array.prototype.slice.call(document.querySelectorAll('.mode')),
+  shutter: document.getElementById('shutter'),
+  lastBtn: document.getElementById('lastBtn'),
+  uploadBtn: document.getElementById('uploadBtn'),
+  fileInput: document.getElementById('fileInput'),
+  bars: Array.prototype.slice.call(document.querySelectorAll('#bars i')),
+  gate: document.getElementById('gate'),
+  gateTitle: document.getElementById('gateTitle'),
+  gateText: document.getElementById('gateText'),
+  gateDetail: document.getElementById('gateDetail'),
+  gateBtn: document.getElementById('gateBtn')
+};
+
+var S = {
+  mode: 'voice',
+  recMode: 'voice',
+  stream: null,
+  ctx: null,
+  source: null,
+  analyser: null,
+  capture: null,
+  sink: null,
+  kind: '',
+  ready: false,
+  rec: false,
+  collecting: false,
+  busy: false,
+  chunks: [],
+  length: 0,
+  recStart: 0,
+  tick: 0,
+  meterId: 0,
+  wake: null,
+  last: null,
+  flushDone: null
+};
+
+/* ---------------- helpers ---------------- */
+
+function toast(msg){
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toast.id);
+  toast.id = setTimeout(function(){ el.toast.classList.remove('show'); }, 3200);
+}
+
+function stamp(){
+  var d = new Date();
+  function p(n){ return (n < 10 ? '0' : '') + n; }
+  return d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' +
+         p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function save(blob, name){
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ a.remove(); URL.revokeObjectURL(url); }, 10000);
+}
+
+function showGate(title, text, btn, detail){
+  el.gateDetail.textContent = detail || '';
+  el.gateTitle.textContent = title;
+  el.gateText.textContent = text;
+  el.gateBtn.textContent = btn || 'Try again';
+  el.gate.classList.add('show');
+}
+
+function hideGate(){ el.gate.classList.remove('show'); }
+
+function setBusy(on){
+  S.busy = on;
+  el.body.setAttribute('data-busy', on ? '1' : '0');
+  el.shutter.disabled = on || !S.ready;
+  el.lastBtn.disabled = on || !S.last;
+  el.uploadBtn.disabled = on;
+  el.modeBtns.forEach(function(b){ b.disabled = on; });
+  if (!on) el.caption.textContent = CAPTION[S.mode];
+}
+
+function setMode(mode){
+  if (mode === S.mode || S.rec || S.busy || MODES.indexOf(mode) < 0) return;
+  S.mode = mode;
+  el.body.setAttribute('data-mode', mode);
+  el.modeBtns.forEach(function(b){
+    var on = b.getAttribute('data-mode') === mode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  el.caption.textContent = CAPTION[mode];
+}
+
+/* ---------------- WAV ---------------- */
+
+function toInt16(f){
+  var o = new Int16Array(f.length);
+  for (var i = 0; i < f.length; i++){
+    var v = f[i] < -1 ? -1 : (f[i] > 1 ? 1 : f[i]);
+    o[i] = v < 0 ? Math.round(v * 32768) : Math.round(v * 32767);
+  }
+  return o;
+}
+
+function wavBlob(chunks, frames, rate){
+  var h = new DataView(new ArrayBuffer(44));
+  var bytes = frames * 2;
+  function str(o, t){ for (var i = 0; i < t.length; i++) h.setUint8(o + i, t.charCodeAt(i)); }
+  str(0, 'RIFF'); h.setUint32(4, 36 + bytes, true); str(8, 'WAVE');
+  str(12, 'fmt '); h.setUint32(16, 16, true); h.setUint16(20, 1, true); h.setUint16(22, 1, true);
+  h.setUint32(24, rate, true); h.setUint32(28, rate * 2, true); h.setUint16(32, 2, true); h.setUint16(34, 16, true);
+  str(36, 'data'); h.setUint32(40, bytes, true);
+  var parts = [h.buffer];
+  chunks.forEach(function(c){ parts.push(c.buffer.byteLength === c.length * 2 ? c.buffer : c.slice().buffer); });
+  return new Blob(parts, { type: 'audio/wav' });
+}
+
+function lockScreen(){
+  if (!('wakeLock' in navigator)) return;
+  navigator.wakeLock.request('screen').then(function(w){ S.wake = w; }).catch(function(){});
+}
+
+function unlockScreen(){
+  if (S.wake){ S.wake.release().catch(function(){}); S.wake = null; }
+}
+
+/* ---------------- microphone ---------------- */
+
+var WORKLET_SRC = [
+  'class TapProcessor extends AudioWorkletProcessor{',
+  '  constructor(){',
+  '    super();',
+  '    this.on = false; this.buf = new Float32Array(4096); this.n = 0;',
+  '    var self = this;',
+  '    this.port.onmessage = function(e){',
+  '      if (e.data === "start"){ self.on = true; self.n = 0; }',
+  '      else if (e.data === "stop"){ self.on = false; self.flush(); self.port.postMessage("done"); }',
+  '    };',
+  '  }',
+  '  flush(){',
+  '    if (this.n > 0){ var out = this.buf.slice(0, this.n); this.port.postMessage(out, [out.buffer]); this.n = 0; }',
+  '  }',
+  '  process(inputs){',
+  '    var ch = inputs[0] && inputs[0][0];',
+  '    if (this.on && ch){',
+  '      for (var i = 0; i < ch.length; i++){',
+  '        this.buf[this.n++] = ch[i];',
+  '        if (this.n === this.buf.length) this.flush();',
+  '      }',
+  '    }',
+  '    return true;',
+  '  }',
+  '}',
+  'registerProcessor("tap-processor", TapProcessor);'
+].join('\n');
+
+function newContext(rate){
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (rate){
+    try { return new AC({ sampleRate: rate }); } catch (e){}
+  }
+  return new AC();
+}
+
+function pushChunk(data){
+  if (!S.collecting) return;
+  var limit = Math.floor(MAX_SECONDS[S.recMode] * S.ctx.sampleRate);
+  var full = S.length + data.length >= limit;
+  if (full) data = data.subarray(0, Math.max(0, limit - S.length));
+  if (data.length){
+    /* Voice keeps 16-bit samples, thus a long recording uses half the memory. */
+    S.chunks.push(S.recMode === 'voice' ? toInt16(data) : data);
+    S.length += data.length;
+  }
+  if (full && S.rec){
+    stopRec();
+    toast('The recording reached the maximum length.');
+  }
+}
+
+async function buildCapture(){
+  var ctx = S.ctx;
+  S.sink = ctx.createGain();
+  S.sink.gain.value = 0;
+  S.sink.connect(ctx.destination);
+
+  if (ctx.audioWorklet && window.AudioWorkletNode){
+    var url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }));
+    try {
+      await ctx.audioWorklet.addModule(url);
+      var node = new AudioWorkletNode(ctx, 'tap-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]
+      });
+      node.port.onmessage = function(e){
+        if (e.data === 'done'){
+          if (S.flushDone){ var f = S.flushDone; S.flushDone = null; f(); }
+          return;
+        }
+        pushChunk(e.data);
+      };
+      S.source.connect(node);
+      node.connect(S.sink);
+      S.capture = node;
+      S.kind = 'worklet';
+      URL.revokeObjectURL(url);
+      return;
+    } catch (e){
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  var sp = ctx.createScriptProcessor(4096, 1, 1);
+  sp.onaudioprocess = function(e){
+    if (!S.rec) return;
+    pushChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  S.source.connect(sp);
+  sp.connect(S.sink);
+  S.capture = sp;
+  S.kind = 'script';
+}
+
+/* Find the real cause of a microphone error. */
+async function micProblem(err){
+  var name = (err && err.name) || 'Error';
+  var msg = (err && err.message) || '';
+  var detail = name + (msg ? ': ' + msg : '');
+  var state = '';
+  try {
+    if (navigator.permissions && navigator.permissions.query){
+      state = (await navigator.permissions.query({ name: 'microphone' })).state;
+    }
+  } catch (e){}
+  if (state) detail += ' (browser permission: ' + state + ')';
+
+  var framed = false;
+  try { framed = window.self !== window.top; } catch (e){ framed = true; }
+
+  var blocked = name === 'NotAllowedError' || name === 'SecurityError';
+  var text;
+
+  if (blocked && framed){
+    text = 'This page is inside a frame that blocks the microphone. Download the file and open it directly in the browser.';
+  } else if (blocked && (/system/i.test(msg) || state === 'granted')){
+    text = 'The browser has permission, but the operating system blocks the microphone. ' +
+           'On macOS, open System Settings > Privacy & Security > Microphone and turn on the browser. ' +
+           'On Windows, open Settings > Privacy & security > Microphone and turn on "Let desktop apps access your microphone." ' +
+           'Then quit the browser, open it again, and touch the button.';
+  } else if (blocked && /dismiss/i.test(msg)){
+    text = 'The permission prompt closed before you selected an option. Touch the button to ask again.';
+  } else if (blocked){
+    text = 'Microphone access is off for this page. Click the icon at the left of the address bar, allow the microphone, then touch the button.';
+  } else if (name === 'NotFoundError' || name === 'OverconstrainedError'){
+    text = 'The browser cannot find a microphone. Connect a microphone and make sure that the operating system permits the browser to use it. Then touch the button.';
+  } else if (name === 'NotReadableError' || name === 'AbortError'){
+    text = 'The microphone is not available. Another app can be using it, or the operating system blocks it. Close the other apps that use the microphone, then touch the button.';
+  } else {
+    text = 'The microphone did not start. Touch the button to try again.';
+  }
+  return { text: text, detail: detail };
+}
+
+async function startMic(){
+  hideGate();
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showGate('neorecorder',
+      'The browser blocks the microphone on this page. Open the file from HTTPS or from localhost.',
+      'Try again');
+    return;
+  }
+
+  /* Make the context now, while a touch can still unlock the audio. */
+  if (!S.ctx) S.ctx = newContext();
+  if (!S.ctx){
+    showGate('neorecorder', 'This browser does not have the Web Audio API.', 'Try again');
+    return;
+  }
+
+  var stream, err = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+      video: false
+    });
+  } catch (e){
+    err = e;
+  }
+
+  /* Some desktop drivers refuse the raw settings. Try again with the default settings. */
+  if (!stream && err && err.name !== 'NotAllowedError' && err.name !== 'SecurityError'){
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      err = null;
+    } catch (e2){
+      err = e2;
+    }
+  }
+
+  if (!stream){
+    var info = await micProblem(err);
+    showGate('neorecorder', info.text, 'Try again', info.detail);
+    return;
+  }
+  S.stream = stream;
+
+  try {
+    S.source = S.ctx.createMediaStreamSource(stream);
+  } catch (e){
+    /* Firefox needs the context at the rate of the microphone. */
+    var track = stream.getAudioTracks()[0];
+    var rate = track && track.getSettings ? track.getSettings().sampleRate : 0;
+    try { S.ctx.close(); } catch (e2){}
+    S.ctx = newContext(rate);
+    S.source = S.ctx.createMediaStreamSource(stream);
+  }
+
+  S.analyser = S.ctx.createAnalyser();
+  S.analyser.fftSize = 512;
+  S.analyser.smoothingTimeConstant = 0.6;
+  S.source.connect(S.analyser);
+
+  await buildCapture();
+
+  stream.getAudioTracks().forEach(function(t){
+    t.addEventListener('ended', function(){
+      if (S.rec) stopRec();
+      S.ready = false;
+      el.shutter.disabled = true;
+      showGate('neorecorder', 'The microphone stopped. Touch the button to start it again.', 'Allow the microphone');
+    });
+  });
+
+  S.ready = true;
+  el.shutter.disabled = false;
+  if (S.ctx.state !== 'running') S.ctx.resume().catch(function(){});
+  startMeter();
+}
+
+/* ---------------- meter ---------------- */
+
+var BANDS = [1, 2, 4, 7, 12, 20, 34, 60];
+
+function startMeter(){
+  cancelAnimationFrame(S.meterId);
+  var data = new Uint8Array(S.analyser.frequencyBinCount);
+  (function loop(){
+    S.meterId = requestAnimationFrame(loop);
+    var live = S.ctx && S.ctx.state === 'running' && !S.busy;
+    if (live) S.analyser.getByteFrequencyData(data);
+    for (var b = 0; b < el.bars.length; b++){
+      var h = 6;
+      if (live){
+        var sum = 0, n = 0;
+        for (var k = BANDS[b]; k < BANDS[b + 1]; k++){ sum += data[k]; n++; }
+        h = 6 + 58 * Math.pow((sum / n) / 255, 1.4);
+      }
+      el.bars[b].style.height = h.toFixed(1) + 'px';
+    }
+  })();
+}
+
+/* ---------------- recording ---------------- */
+
+function showTime(){
+  var s = Math.floor((performance.now() - S.recStart) / 1000);
+  var m = Math.floor(s / 60);
+  el.timer.textContent = (m < 10 ? '0' : '') + m + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+}
+
+async function startRec(){
+  if (!S.ready || S.busy || S.rec || S.uploading) return;
+  if (S.ctx.state !== 'running'){
+    try { await S.ctx.resume(); } catch (e){}
+  }
+  S.chunks = [];
+  S.length = 0;
+  S.recMode = S.mode;
+  S.collecting = true;
+  S.rec = true;
+  if (S.kind === 'worklet') S.capture.port.postMessage('start');
+  S.recStart = performance.now();
+  showTime();
+  S.tick = setInterval(showTime, 250);
+  el.body.setAttribute('data-rec', '1');
+  el.shutter.setAttribute('aria-label', 'Stop the recording');
+  el.lastBtn.disabled = true;
+  el.uploadBtn.disabled = true;
+  el.modeBtns.forEach(function(b){ b.disabled = true; });
+  lockScreen();
+}
+
+async function stopRec(){
+  if (!S.rec) return;
+  S.rec = false;
+  clearInterval(S.tick);
+  el.body.setAttribute('data-rec', '0');
+  el.shutter.setAttribute('aria-label', 'Start the recording');
+  unlockScreen();
+
+  var midi = S.recMode === 'midi';
+  setBusy(true);
+  el.caption.textContent = midi ? 'Analysis 0%' : 'Saving';
+
+  if (S.kind === 'worklet'){
+    await new Promise(function(res){
+      S.flushDone = res;
+      S.capture.port.postMessage('stop');
+      setTimeout(res, 1000);
+    });
+  }
+  S.collecting = false;
+
+  var rate = S.ctx.sampleRate;
+  if (!midi){
+    var chunks = S.chunks, frames = S.length;
+    S.chunks = [];
+    setBusy(false);
+    if (frames < rate * 0.1){
+      toast('The recording is too short. Record again.');
+      return;
+    }
+    var wav = wavBlob(chunks, frames, rate);
+    var wname = 'AUD_' + stamp() + '.wav';
+    S.last = { blob: wav, name: wname };
+    el.lastBtn.disabled = false;
+    save(wav, wname);
+    toast('Recording saved.');
+    return;
+  }
+  if (S.length < rate * 0.3){
+    S.chunks = [];
+    setBusy(false);
+    toast('The recording is too short. Record again.');
+    return;
+  }
+
+  var samples = new Float32Array(S.length), off = 0;
+  S.chunks.forEach(function(c){ samples.set(c, off); off += c.length; });
+  S.chunks = [];
+  await finishMidi(samples, rate, 'MIDI_' + stamp(), '');
+}
+
+/* Analyze samples, write the MIDI file, and save it. The caller sets the busy state. */
+async function finishMidi(samples, rate, base, note){
+  var result;
+  try {
+    result = await A2M.analyze(samples, rate, function(p){
+      el.caption.textContent = 'Analysis ' + Math.round(p * 100) + '%';
+    });
+  } catch (err){
+    setBusy(false);
+    toast('The analysis failed. Try again.');
+    return;
+  }
+  setBusy(false);
+
+  if (!result.notes.length){
+    toast('No notes found. Use a clear sound with one note at a time.');
+    return;
+  }
+
+  var bytes = A2M.writeMidi(result);
+  var name = base + '_' + result.bpm + 'bpm.mid';
+  var blob = new Blob([bytes], { type: 'audio/midi' });
+  S.last = { blob: blob, name: name };
+  el.lastBtn.disabled = false;
+  save(blob, name);
+
+  var count = result.notes.length + (result.notes.length === 1 ? ' note' : ' notes');
+  toast(count + ', ' + result.bpm + ' BPM' + (result.fallback ? ' (default)' : '') + '. File saved.' + note);
+}
+
+/* ---------------- upload ---------------- */
+
+function readFile(file){
+  if (file.arrayBuffer) return file.arrayBuffer();
+  return new Promise(function(res, rej){
+    var r = new FileReader();
+    r.onload = function(){ res(r.result); };
+    r.onerror = function(){ rej(r.error); };
+    r.readAsArrayBuffer(file);
+  });
+}
+
+function decodeAudio(ctx, data){
+  return new Promise(function(res, rej){
+    var p;
+    try { p = ctx.decodeAudioData(data, res, rej); } catch (e){ rej(e); return; }
+    if (p && p.then) p.then(res, rej);
+  });
+}
+
+async function convertFile(file){
+  if (S.busy || S.rec) return;
+  S.uploading = true;
+  setBusy(true);
+  el.caption.textContent = 'Reading the file';
+
+  var buf;
+  try {
+    if (!S.ctx) S.ctx = newContext();
+    var data = await readFile(file);
+    buf = await decodeAudio(S.ctx, data);
+  } catch (err){
+    S.uploading = false;
+    setBusy(false);
+    toast('The browser cannot read this file. Use WAV, MP3, M4A, or AAC.');
+    return;
+  }
+
+  var rate = buf.sampleRate;
+  var total = buf.length;
+  var frames = Math.min(total, Math.floor(MAX_UPLOAD * rate));
+  var mono = new Float32Array(frames), ch = buf.numberOfChannels, c, i;
+  for (c = 0; c < ch; c++){
+    var src = buf.getChannelData(c);
+    for (i = 0; i < frames; i++) mono[i] += src[i] / ch;
+  }
+  buf = null;
+
+  if (frames < rate * 0.3){
+    S.uploading = false;
+    setBusy(false);
+    toast('The file is too short.');
+    return;
+  }
+
+  var base = file.name.replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'audio';
+  var note = frames < total ? ' Only the first 10 minutes were analyzed.' : '';
+  await finishMidi(mono, rate, base, note);
+  S.uploading = false;
+}
+
+/* ---------------- controls ---------------- */
+
+el.shutter.addEventListener('click', function(){
+  if (S.rec) stopRec(); else startRec();
+});
+
+el.modeBtns.forEach(function(b){
+  b.addEventListener('click', function(){ setMode(b.getAttribute('data-mode')); });
+});
+
+/* A swipe on the stage changes the mode, as in the camera app. */
+(function(){
+  var start = null;
+  el.stage.addEventListener('pointerdown', function(e){ start = { x: e.clientX, y: e.clientY }; });
+  el.stage.addEventListener('pointerup', function(e){
+    if (!start) return;
+    var dx = e.clientX - start.x, dy = e.clientY - start.y;
+    start = null;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    var i = MODES.indexOf(S.mode) + (dx < 0 ? 1 : -1);
+    if (i >= 0 && i < MODES.length) setMode(MODES[i]);
+  });
+  el.stage.addEventListener('pointercancel', function(){ start = null; });
+})();
+
+el.uploadBtn.addEventListener('click', function(){
+  if (S.mode !== 'midi' || S.rec || S.busy) return;
+  el.fileInput.value = '';
+  el.fileInput.click();
+});
+
+el.fileInput.addEventListener('change', function(){
+  var f = el.fileInput.files && el.fileInput.files[0];
+  if (f) convertFile(f);
+});
+
+el.lastBtn.addEventListener('click', function(){
+  if (S.last && !S.busy && !S.rec) save(S.last.blob, S.last.name);
+});
+
+el.gateBtn.addEventListener('click', function(){
+  if (S.stream){
+    S.stream.getTracks().forEach(function(t){ t.stop(); });
+    S.stream = null;
+  }
+  startMic();
+});
+
+document.addEventListener('keydown', function(e){
+  if (el.gate.classList.contains('show')) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight'){
+    var i = MODES.indexOf(S.mode) + (e.key === 'ArrowRight' ? 1 : -1);
+    if (i >= 0 && i < MODES.length) setMode(MODES[i]);
+    return;
+  }
+  if (e.code === 'Space' || e.key === 'Enter'){
+    if (document.activeElement === el.lastBtn || document.activeElement === el.uploadBtn || el.modeBtns.indexOf(document.activeElement) >= 0) return;
+    e.preventDefault();
+    if (!e.repeat) el.shutter.click();
+  }
+});
+
+/* iOS starts the context in the suspended state until a touch. */
+function unlockAudio(){
+  if (S.ctx && S.ctx.state !== 'running') S.ctx.resume().catch(function(){});
+}
+document.addEventListener('pointerdown', unlockAudio, true);
+document.addEventListener('keydown', unlockAudio, true);
+
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible'){
+    unlockAudio();
+    if (S.rec) lockScreen();
+  }
+});
+
+startMic();
+
+})();
+</script>
+</body>
+</html>
